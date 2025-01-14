@@ -95,7 +95,6 @@ func (s *Store[K, T]) Vertex(hash K) (T, graph.VertexProperties, error) {
 		RunWith(s.db).
 		QueryRow().
 		Scan(&valueBytes, &properties.Weight, &attributesBytes)
-
 	if err != nil {
 		return value, properties, fmt.Errorf("failed to query vertex: %w", err)
 	}
@@ -118,7 +117,6 @@ func (s *Store[K, T]) ListVertices() ([]K, error) {
 		From(s.config.VerticesTable).
 		RunWith(s.db).
 		Query()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vertices: %w", err)
 	}
@@ -216,7 +214,9 @@ func (s *Store[K, T]) Edge(sourceHash, targetHash K) (graph.Edge[K], error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return edge, graph.ErrEdgeNotFound
 	}
-
+	if err != nil {
+		return edge, fmt.Errorf("failed to scan row: %w", err)
+	}
 	if err = json.Unmarshal(attributesBytes, &edge.Properties.Attributes); err != nil {
 		return edge, fmt.Errorf("failed to unmarshal attributes: %w", err)
 	}
@@ -237,7 +237,6 @@ func (s *Store[K, T]) ListEdges() ([]graph.Edge[K], error) {
 		From(s.config.EdgesTable).
 		RunWith(s.db).
 		Query()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to query edges: %w", err)
 	}
@@ -268,4 +267,51 @@ func (s *Store[K, T]) ListEdges() ([]graph.Edge[K], error) {
 	}
 
 	return edges, nil
+}
+
+// RemoveVertex implements graph.Store.RemoveVertex.
+// from https://github.com/dominikbraun/graph-sql/pull/3/files
+func (s *Store[K, T]) RemoveVertex(hash K) error {
+	_, err := sq.
+		Delete(s.config.VerticesTable).
+		Where(sq.Eq{
+			"hash": hash,
+		}).
+		RunWith(s.db).
+		Exec()
+
+	return err
+}
+
+// EdgeCount implements graph.Store.EdgeCount.
+func (s *Store[K, T]) EdgeCount() (int, error) {
+	var count int
+
+	// Please note that for some reason count(id) does not return the correct results for sqlite.
+	err := sq.
+		Select("count(source_hash)").
+		From(s.config.EdgesTable).
+		RunWith(s.db).
+		QueryRow().
+		Scan(&count)
+
+	return count, err
+}
+
+func (s *Store[K, T]) UpdateEdge(sourceHash, targetHash K, edge graph.Edge[K]) error {
+	attributesBytes, err := json.Marshal(edge.Properties.Attributes)
+	if err != nil {
+		return err
+	}
+
+	_, err = sq.Update(s.config.EdgesTable).
+		Set("weight", edge.Properties.Weight).
+		Set("attributes", attributesBytes).
+		Set("data", edge.Properties.Data).
+		Where("source_hash = ?", sourceHash).
+		Where("target_hash = ?", targetHash).
+		RunWith(s.db).
+		Exec()
+
+	return err
 }
