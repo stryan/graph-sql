@@ -1,4 +1,4 @@
-module github.com/dominikbraun/graph-sql
+module github.com/stryan/graph-sql
 
 go 1.18
 
