@@ -57,12 +57,12 @@ type Config struct {
 	EdgesTable      string
 	VertexHashType  string
 	VertexValueType string
-	safe            bool
+	Safe            bool
 }
 
 func createVerticesTableSQL(c Config) string {
 	createSQL := createVerticesTable
-	if c.safe {
+	if c.Safe {
 		createSQL = safeCreateVerticesTable
 	}
 	return fmt.Sprintf(
@@ -75,7 +75,7 @@ func createVerticesTableSQL(c Config) string {
 
 func createEdgesTableSQL(c Config) string {
 	createSQL := createEdgesTable
-	if c.safe {
+	if c.Safe {
 		createSQL = safeCreateEdgesTable
 	}
 	return fmt.Sprintf(
