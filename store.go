@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dominikbraun/graph"
 
@@ -32,6 +33,12 @@ func (s *Store[K, T]) SetupTables() error {
 	_, err := s.db.Exec(createVerticesTableSQL(s.config))
 	if err != nil {
 		return fmt.Errorf("failed to set up %s table: %w", s.config.VerticesTable, err)
+	}
+	if s.config.Unique {
+		_, err = s.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX unq_vertex_hash ON %v(hash)", s.config.VerticesTable))
+		if err != nil {
+			return fmt.Errorf("error setting up unique index on vertice table: %w", err)
+		}
 	}
 
 	_, err = s.db.Exec(createEdgesTableSQL(s.config))
@@ -68,13 +75,17 @@ func (s *Store[K, T]) AddVertex(hash K, value T, properties graph.VertexProperti
 	if err != nil {
 		return err
 	}
-
 	_, err = sq.
 		Insert(s.config.VerticesTable).
 		Columns("hash", "value", "weight", "attributes").
 		Values(hash, valueBytes, properties.Weight, attributeBytes).
 		RunWith(s.db).
 		Exec()
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return graph.ErrVertexAlreadyExists
+	} else if err != nil {
+		return err
+	}
 
 	return err
 }
@@ -96,6 +107,9 @@ func (s *Store[K, T]) Vertex(hash K) (T, graph.VertexProperties, error) {
 		QueryRow().
 		Scan(&valueBytes, &properties.Weight, &attributesBytes)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return value, properties, graph.ErrVertexNotFound
+		}
 		return value, properties, fmt.Errorf("failed to query vertex: %w", err)
 	}
 
@@ -115,6 +129,7 @@ func (s *Store[K, T]) ListVertices() ([]K, error) {
 	rows, err := sq.
 		Select("hash").
 		From(s.config.VerticesTable).
+		OrderBy("hash").
 		RunWith(s.db).
 		Query()
 	if err != nil {

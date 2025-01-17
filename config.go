@@ -12,7 +12,7 @@ CREATE TABLE %s (
 	attributes JSON
 );`
 	safeCreateVerticesTable = `
-CREATE TABLE %s IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS %s (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     hash %s,
     value %s,
@@ -30,7 +30,7 @@ CREATE TABLE %s (
 	data BLOB
 );`
 	safeCreateEdgesTable = `
-CREATE TABLE %s IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS %s (
 	id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	source_hash %s,
 	target_hash %s,
@@ -58,6 +58,7 @@ type Config struct {
 	VertexHashType  string
 	VertexValueType string
 	Safe            bool
+	Unique          bool
 }
 
 func createVerticesTableSQL(c Config) string {

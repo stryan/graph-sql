@@ -12,13 +12,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func createStore[K comparable, T any]() (*Store[K, T], error) {
+func createStore[K comparable, T any](c Config) (*Store[K, T], error) {
 	db, err := sql.Open("sqlite3", "file::memory:")
 	if err != nil {
 		panic(err)
 	}
 
-	store := New[K, T](db, DefaultConfig)
+	store := New[K, T](db, c)
 	if store == nil {
 		return nil, fmt.Errorf("failed to create new store")
 	}
@@ -37,10 +37,23 @@ func TestImplementsStoreInterface(t *testing.T) {
 	var _ graph.Store[int, int] = (*Store[int, int])(&store)
 }
 
+func TestUnique(t *testing.T) {
+	assert := assert.New(t)
+	conf := DefaultConfig
+	conf.Unique = true
+	store, err := createStore[int, int](conf)
+	assert.Nil(err)
+	assert.NotNil(store)
+	assert.Nil(store.AddVertex(1, 1, graph.VertexProperties{}))
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Error(err)
+	assert.Equal(graph.ErrVertexAlreadyExists, err)
+}
+
 func TestEdgeCount(t *testing.T) {
 	assert := assert.New(t)
 
-	store, err := createStore[int, int]()
+	store, err := createStore[int, int](DefaultConfig)
 	assert.Nil(err)
 	assert.NotNil(store)
 
@@ -85,7 +98,7 @@ func TestEdgeCount(t *testing.T) {
 func TestRemoveVertex(t *testing.T) {
 	assert := assert.New(t)
 
-	store, err := createStore[int, int]()
+	store, err := createStore[int, int](DefaultConfig)
 	assert.Nil(err)
 	assert.NotNil(store)
 
@@ -126,7 +139,7 @@ func TestRemoveVertex(t *testing.T) {
 func TestUpdateEdge(t *testing.T) {
 	assert := assert.New(t)
 
-	store, err := createStore[int, int]()
+	store, err := createStore[int, int](DefaultConfig)
 	assert.Nil(err)
 	assert.NotNil(store)
 
