@@ -49,6 +49,8 @@ var DefaultConfig = Config{
 	EdgesTable:      "edges",
 	VertexHashType:  "TEXT",
 	VertexValueType: "JSON",
+	Safe:            false,
+	Unique:          false,
 }
 
 // Config configures the table schema, i.e. the table names and some data types of its columns.
