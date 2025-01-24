@@ -58,12 +58,12 @@ func (s *Store[K, T]) SetupTables() error {
 func (s *Store[K, T]) DestroyTables() error {
 	_, err := s.db.Exec(dropEdgesTableSQL(s.config))
 	if err != nil {
-		return fmt.Errorf("failed to set up %s table: %w", s.config.EdgesTable, err)
+		return fmt.Errorf("failed to drop %s table: %w", s.config.EdgesTable, err)
 	}
 
 	_, err = s.db.Exec(dropVerticesTableSQL(s.config))
 	if err != nil {
-		return fmt.Errorf("failed to set up %s table: %w", s.config.VerticesTable, err)
+		return fmt.Errorf("failed to drop %s table: %w", s.config.VerticesTable, err)
 	}
 
 	return nil
