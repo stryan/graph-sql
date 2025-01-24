@@ -44,10 +44,32 @@ func TestUnique(t *testing.T) {
 	store, err := createStore[int, int](conf)
 	assert.Nil(err)
 	assert.NotNil(store)
+
 	assert.Nil(store.AddVertex(1, 1, graph.VertexProperties{}))
 	err = store.AddVertex(1, 1, graph.VertexProperties{})
 	assert.Error(err)
 	assert.Equal(graph.ErrVertexAlreadyExists, err)
+}
+
+func TestAddEdge(t *testing.T) {
+	assert := assert.New(t)
+
+	store, err := createStore[int, int](DefaultConfig)
+	assert.Nil(err)
+	assert.NotNil(store)
+
+	err = store.AddEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Equal(graph.ErrVertexNotFound, err)
+
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(2, 2, graph.VertexProperties{})
+	assert.Nil(err)
+
+	err = store.AddEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
+	err = store.AddEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Equal(graph.ErrEdgeAlreadyExists, err)
 }
 
 func TestEdgeCount(t *testing.T) {
@@ -57,42 +79,90 @@ func TestEdgeCount(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(store)
 
-	store.AddVertex(1, 1, graph.VertexProperties{})
-	store.AddVertex(2, 2, graph.VertexProperties{})
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(2, 2, graph.VertexProperties{})
+	assert.Nil(err)
 
 	edgeCount, err := store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(0, edgeCount)
 
-	store.AddEdge(1, 2, graph.Edge[int]{1, 2, graph.EdgeProperties{}})
+	err = store.AddEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
 
 	edgeCount, err = store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(1, edgeCount)
 
-	store.AddEdge(2, 1, graph.Edge[int]{2, 1, graph.EdgeProperties{}})
+	err = store.AddEdge(2, 1, graph.Edge[int]{Source: 2, Target: 1, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
 
 	edgeCount, err = store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(2, edgeCount)
 
-	store.AddEdge(1, 1, graph.Edge[int]{1, 1, graph.EdgeProperties{}})
+	err = store.AddEdge(1, 1, graph.Edge[int]{Source: 1, Target: 1, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
 
 	edgeCount, err = store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(3, edgeCount)
 
-	store.AddEdge(2, 2, graph.Edge[int]{2, 2, graph.EdgeProperties{}})
+	err = store.AddEdge(2, 2, graph.Edge[int]{Source: 2, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
 
 	edgeCount, err = store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(4, edgeCount)
 
-	store.RemoveEdge(2, 2)
+	err = store.RemoveEdge(2, 2)
+	assert.Nil(err)
 
 	edgeCount, err = store.EdgeCount()
 	assert.Nil(err)
 	assert.Equal(3, edgeCount)
+}
+
+func TestAddVertex(t *testing.T) {
+	assert := assert.New(t)
+
+	store, err := createStore[int, int](DefaultConfig)
+	assert.Nil(err)
+	assert.NotNil(store)
+
+	_, _, err = store.Vertex(1)
+	assert.Equal(graph.ErrVertexNotFound, err)
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
+	_, _, err = store.Vertex(1)
+
+	assert.Nil(err)
+}
+
+func TestVertexCount(t *testing.T) {
+	assert := assert.New(t)
+
+	store, err := createStore[int, int](DefaultConfig)
+	assert.Nil(err)
+	assert.NotNil(store)
+
+	count, err := store.VertexCount()
+	assert.Nil(err)
+	assert.Equal(0, count)
+	vertexCount := 20
+	for i := 0; i < vertexCount; i++ {
+		err = store.AddVertex(i, i, graph.VertexProperties{})
+		assert.Nil(err)
+	}
+	count, err = store.VertexCount()
+	assert.Nil(err)
+	assert.Equal(vertexCount, count)
+	err = store.RemoveVertex(vertexCount - 1)
+	assert.Nil(err)
+	count, err = store.VertexCount()
+	assert.Nil(err)
+	assert.Equal(vertexCount-1, count)
 }
 
 func TestRemoveVertex(t *testing.T) {
@@ -102,7 +172,8 @@ func TestRemoveVertex(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(store)
 
-	store.AddVertex(1, 1, graph.VertexProperties{})
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
 
 	vertexCount, err := store.VertexCount()
 	assert.Nil(err)
@@ -116,10 +187,14 @@ func TestRemoveVertex(t *testing.T) {
 	assert.Equal(0, vertexCount)
 
 	// larger graph
-	store.AddVertex(1, 1, graph.VertexProperties{})
-	store.AddVertex(2, 2, graph.VertexProperties{})
-	store.AddVertex(3, 3, graph.VertexProperties{})
-	store.AddVertex(4, 4, graph.VertexProperties{})
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(2, 2, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(3, 3, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(4, 4, graph.VertexProperties{})
+	assert.Nil(err)
 
 	vertexCount, err = store.VertexCount()
 	assert.Nil(err)
@@ -143,15 +218,24 @@ func TestUpdateEdge(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(store)
 
-	store.AddVertex(1, 1, graph.VertexProperties{})
-	store.AddVertex(2, 2, graph.VertexProperties{})
+	err = store.UpdateEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Equal(graph.ErrEdgeNotFound, err)
 
-	store.AddEdge(1, 2, graph.Edge[int]{1, 2, graph.EdgeProperties{}})
-	store.AddEdge(2, 1, graph.Edge[int]{2, 1, graph.EdgeProperties{}})
-	store.AddEdge(1, 1, graph.Edge[int]{1, 1, graph.EdgeProperties{}})
-	store.AddEdge(2, 2, graph.Edge[int]{2, 2, graph.EdgeProperties{}})
+	err = store.AddVertex(1, 1, graph.VertexProperties{})
+	assert.Nil(err)
+	err = store.AddVertex(2, 2, graph.VertexProperties{})
+	assert.Nil(err)
 
-	err = store.UpdateEdge(1, 1, graph.Edge[int]{1, 1, graph.EdgeProperties{
+	err = store.AddEdge(1, 2, graph.Edge[int]{Source: 1, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
+	err = store.AddEdge(2, 1, graph.Edge[int]{Source: 2, Target: 1, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
+	err = store.AddEdge(1, 1, graph.Edge[int]{Source: 1, Target: 1, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
+	err = store.AddEdge(2, 2, graph.Edge[int]{Source: 2, Target: 2, Properties: graph.EdgeProperties{}})
+	assert.Nil(err)
+
+	err = store.UpdateEdge(1, 1, graph.Edge[int]{Source: 1, Target: 1, Properties: graph.EdgeProperties{
 		Attributes: map[string]string{"abc": "xyz"},
 		Weight:     5,
 		Data:       "happy",

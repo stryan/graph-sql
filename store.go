@@ -45,6 +45,11 @@ func (s *Store[K, T]) SetupTables() error {
 	if err != nil {
 		return fmt.Errorf("failed to set up %s table: %w", s.config.EdgesTable, err)
 	}
+	sql := fmt.Sprintf("CREATE UNIQUE INDEX unq_edge_hashes ON %v(source_hash,target_hash)", s.config.EdgesTable)
+	_, err = s.db.Exec(sql)
+	if err != nil {
+		return fmt.Errorf("error setting up unique index on edge table: %w", err)
+	}
 
 	return nil
 }
@@ -169,6 +174,26 @@ func (s *Store[K, T]) AddEdge(sourceHash, targetHash K, edge graph.Edge[K]) erro
 	if err != nil {
 		return err
 	}
+	var vertcount int
+	err = sq.
+		Select("count(hash)").
+		From(s.config.VerticesTable).
+		Where(sq.Or{
+			sq.Eq{"hash": sourceHash},
+			sq.Eq{"hash": targetHash},
+		}).
+		RunWith(s.db).
+		Scan(&vertcount)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	expectedVerts := 2
+	if sourceHash == targetHash {
+		expectedVerts = 1
+	}
+	if vertcount != expectedVerts || errors.Is(err, sql.ErrNoRows) {
+		return graph.ErrVertexNotFound
+	}
 
 	_, err = sq.
 		Insert(s.config.EdgesTable).
@@ -188,13 +213,36 @@ func (s *Store[K, T]) AddEdge(sourceHash, targetHash K, edge graph.Edge[K]) erro
 		).
 		RunWith(s.db).
 		Exec()
-
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return graph.ErrEdgeAlreadyExists
+	}
 	return err
 }
 
 // RemoveEdge implements graph.Store.RemoveEdge.
 func (s *Store[K, T]) RemoveEdge(sourceHash, targetHash K) error {
-	_, err := sq.
+	var vertcount int
+	err := sq.
+		Select("count(hash)").
+		From(s.config.VerticesTable).
+		Where(sq.Or{
+			sq.Eq{"hash": sourceHash},
+			sq.Eq{"hash": targetHash},
+		}).
+		RunWith(s.db).
+		Scan(&vertcount)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	expectedVerts := 2
+	if sourceHash == targetHash {
+		expectedVerts = 1
+	}
+	if vertcount != expectedVerts || errors.Is(err, sql.ErrNoRows) {
+		return graph.ErrVertexNotFound
+	}
+
+	result, err := sq.
 		Delete(s.config.EdgesTable).
 		Where(sq.Eq{
 			"source_hash": sourceHash,
@@ -202,8 +250,13 @@ func (s *Store[K, T]) RemoveEdge(sourceHash, targetHash K) error {
 		}).
 		RunWith(s.db).
 		Exec()
-
-	return err
+	if err != nil {
+		return err
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return graph.ErrEdgeNotFound
+	}
+	return nil
 }
 
 // Edge implements graph.Store.Edge.
@@ -319,7 +372,7 @@ func (s *Store[K, T]) UpdateEdge(sourceHash, targetHash K, edge graph.Edge[K]) e
 		return err
 	}
 
-	_, err = sq.Update(s.config.EdgesTable).
+	modified, err := sq.Update(s.config.EdgesTable).
 		Set("weight", edge.Properties.Weight).
 		Set("attributes", attributesBytes).
 		Set("data", edge.Properties.Data).
@@ -327,6 +380,8 @@ func (s *Store[K, T]) UpdateEdge(sourceHash, targetHash K, edge graph.Edge[K]) e
 		Where("target_hash = ?", targetHash).
 		RunWith(s.db).
 		Exec()
-
+	if rows, _ := modified.RowsAffected(); rows == 0 {
+		return graph.ErrEdgeNotFound
+	}
 	return err
 }
