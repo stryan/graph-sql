@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS %s (
 	attributes JSON,
 	data BLOB
 );`
-	dropVerticesTable = `DROP TABLE %s;`
-	dropEdgesTable    = `DROP TABLE %s;`
+	dropTable     = `DROP TABLE %s;`
+	safeDropTable = `DROP TABLE %s IF EXISTS;`
 )
 
 // DefaultConfig is a sane default configuration of the table schema. Using DefaultConfig when
@@ -90,15 +90,23 @@ func createEdgesTableSQL(c Config) string {
 }
 
 func dropVerticesTableSQL(c Config) string {
+	dropSql := dropTable
+	if c.Safe {
+		dropSql = safeDropTable
+	}
 	return fmt.Sprintf(
-		dropVerticesTable,
+		dropSql,
 		c.VerticesTable,
 	)
 }
 
 func dropEdgesTableSQL(c Config) string {
+	dropSql := dropTable
+	if c.Safe {
+		dropSql = safeDropTable
+	}
 	return fmt.Sprintf(
-		dropEdgesTable,
+		dropSql,
 		c.EdgesTable,
 	)
 }
