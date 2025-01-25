@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS %s (
 	data BLOB
 );`
 	dropTable     = `DROP TABLE %s;`
-	safeDropTable = `DROP TABLE %s IF EXISTS;`
+	safeDropTable = `DROP TABLE IF EXISTS %s;`
 )
 
 // DefaultConfig is a sane default configuration of the table schema. Using DefaultConfig when
