@@ -4,14 +4,6 @@ import "fmt"
 
 const (
 	createVerticesTable = `
-CREATE TABLE %s (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    hash %s,
-    value %s,
-	weight INT,
-	attributes JSON
-);`
-	safeCreateVerticesTable = `
 CREATE TABLE IF NOT EXISTS %s (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     hash %s,
@@ -21,15 +13,6 @@ CREATE TABLE IF NOT EXISTS %s (
 );
 	`
 	createEdgesTable = `
-CREATE TABLE %s (
-	id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-	source_hash %s,
-	target_hash %s,
-	weight INT,
-	attributes JSON,
-	data BLOB
-);`
-	safeCreateEdgesTable = `
 CREATE TABLE IF NOT EXISTS %s (
 	id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	source_hash %s,
@@ -38,8 +21,7 @@ CREATE TABLE IF NOT EXISTS %s (
 	attributes JSON,
 	data BLOB
 );`
-	dropTable     = `DROP TABLE %s;`
-	safeDropTable = `DROP TABLE IF EXISTS %s;`
+	dropTable = `DROP TABLE IF EXISTS %s;`
 )
 
 // DefaultConfig is a sane default configuration of the table schema. Using DefaultConfig when
@@ -49,7 +31,6 @@ var DefaultConfig = Config{
 	EdgesTable:      "edges",
 	VertexHashType:  "TEXT",
 	VertexValueType: "JSON",
-	Safe:            false,
 	Unique:          false,
 }
 
@@ -58,7 +39,6 @@ var SafeConfig = Config{
 	EdgesTable:      "edges",
 	VertexHashType:  "TEXT",
 	VertexValueType: "JSON",
-	Safe:            true,
 	Unique:          true,
 }
 
@@ -68,17 +48,12 @@ type Config struct {
 	EdgesTable      string
 	VertexHashType  string
 	VertexValueType string
-	Safe            bool
 	Unique          bool
 }
 
 func createVerticesTableSQL(c Config) string {
-	createSQL := createVerticesTable
-	if c.Safe {
-		createSQL = safeCreateVerticesTable
-	}
 	return fmt.Sprintf(
-		createSQL,
+		createVerticesTable,
 		c.VerticesTable,
 		c.VertexHashType,
 		c.VertexValueType,
@@ -86,12 +61,8 @@ func createVerticesTableSQL(c Config) string {
 }
 
 func createEdgesTableSQL(c Config) string {
-	createSQL := createEdgesTable
-	if c.Safe {
-		createSQL = safeCreateEdgesTable
-	}
 	return fmt.Sprintf(
-		createSQL,
+		createEdgesTable,
 		c.EdgesTable,
 		c.VertexHashType,
 		c.VertexHashType,
@@ -99,23 +70,15 @@ func createEdgesTableSQL(c Config) string {
 }
 
 func dropVerticesTableSQL(c Config) string {
-	dropSql := dropTable
-	if c.Safe {
-		dropSql = safeDropTable
-	}
 	return fmt.Sprintf(
-		dropSql,
+		dropTable,
 		c.VerticesTable,
 	)
 }
 
 func dropEdgesTableSQL(c Config) string {
-	dropSql := dropTable
-	if c.Safe {
-		dropSql = safeDropTable
-	}
 	return fmt.Sprintf(
-		dropSql,
+		dropTable,
 		c.EdgesTable,
 	)
 }

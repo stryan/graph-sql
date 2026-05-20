@@ -30,43 +30,53 @@ func New[K comparable, T any](db *sql.DB, config Config) *Store[K, T] {
 // SetupTables creates all required tables inside the configured database. The schema is documented
 // in this library's README file.
 func (s *Store[K, T]) SetupTables() error {
-	_, err := s.db.Exec(createVerticesTableSQL(s.config))
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Exec(createVerticesTableSQL(s.config))
 	if err != nil {
 		return fmt.Errorf("failed to set up %s table: %w", s.config.VerticesTable, err)
 	}
 	if s.config.Unique {
-		_, err = s.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX unq_vertex_hash ON %v(hash)", s.config.VerticesTable))
+		_, err = tx.Exec(fmt.Sprintf("CREATE UNIQUE INDEX unq_vertex_hash ON %v(hash)", s.config.VerticesTable))
 		if err != nil {
 			return fmt.Errorf("error setting up unique index on vertice table: %w", err)
 		}
 	}
 
-	_, err = s.db.Exec(createEdgesTableSQL(s.config))
+	_, err = tx.Exec(createEdgesTableSQL(s.config))
 	if err != nil {
 		return fmt.Errorf("failed to set up %s table: %w", s.config.EdgesTable, err)
 	}
 	sql := fmt.Sprintf("CREATE UNIQUE INDEX unq_edge_hashes ON %v(source_hash,target_hash)", s.config.EdgesTable)
-	_, err = s.db.Exec(sql)
+	_, err = tx.Exec(sql)
 	if err != nil {
 		return fmt.Errorf("error setting up unique index on edge table: %w", err)
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // DestroyTables drops all tables and thus removes all data from the database.
 func (s *Store[K, T]) DestroyTables() error {
-	_, err := s.db.Exec(dropEdgesTableSQL(s.config))
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Exec(dropEdgesTableSQL(s.config))
 	if err != nil {
 		return fmt.Errorf("failed to drop %s table: %w", s.config.EdgesTable, err)
 	}
 
-	_, err = s.db.Exec(dropVerticesTableSQL(s.config))
+	_, err = tx.Exec(dropVerticesTableSQL(s.config))
 	if err != nil {
 		return fmt.Errorf("failed to drop %s table: %w", s.config.VerticesTable, err)
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // AddVertex implements graph.Store.AddVertex.
@@ -140,6 +150,7 @@ func (s *Store[K, T]) ListVertices() ([]K, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vertices: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 
 	var hashes []K
 
@@ -151,7 +162,7 @@ func (s *Store[K, T]) ListVertices() ([]K, error) {
 		hashes = append(hashes, hash)
 	}
 
-	return hashes, nil
+	return hashes, rows.Err()
 }
 
 // VertexCount implements graph.Store.VertexCount.
@@ -289,7 +300,7 @@ func (s *Store[K, T]) Edge(sourceHash, targetHash K) (graph.Edge[K], error) {
 		return edge, fmt.Errorf("failed to unmarshal attributes: %w", err)
 	}
 
-	return edge, err
+	return edge, nil
 }
 
 // ListEdges implements graph.Store.ListEdges.
@@ -308,7 +319,7 @@ func (s *Store[K, T]) ListEdges() ([]graph.Edge[K], error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query edges: %w", err)
 	}
-
+	defer func() { _ = rows.Close() }()
 	var edges []graph.Edge[K]
 
 	for rows.Next() {
@@ -334,13 +345,49 @@ func (s *Store[K, T]) ListEdges() ([]graph.Edge[K], error) {
 		edges = append(edges, edge)
 	}
 
-	return edges, nil
+	return edges, rows.Err()
 }
 
 // RemoveVertex implements graph.Store.RemoveVertex.
 // from https://github.com/dominikbraun/graph-sql/pull/3/files
 func (s *Store[K, T]) RemoveVertex(hash K) error {
-	_, err := sq.
+	// verify vertex exists
+	count := 0
+	err := sq.
+		Select("count(hash)").
+		From(s.config.VerticesTable).
+		Where(sq.Eq{"hash": hash}).
+		RunWith(s.db).
+		QueryRow().
+		Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return graph.ErrVertexNotFound
+	}
+
+	// check for edges
+	edges := 0
+	err = sq.
+		Select("count(source_hash)").
+		From(s.config.EdgesTable).
+		Where(sq.Or{
+			sq.Eq{"source_hash": hash},
+			sq.Eq{"target_hash": hash},
+		},
+		).
+		RunWith(s.db).
+		QueryRow().
+		Scan(&edges)
+	if err != nil {
+		return err
+	}
+	if edges != 0 {
+		return graph.ErrVertexHasEdges
+	}
+
+	_, err = sq.
 		Delete(s.config.VerticesTable).
 		Where(sq.Eq{
 			"hash": hash,
@@ -380,8 +427,11 @@ func (s *Store[K, T]) UpdateEdge(sourceHash, targetHash K, edge graph.Edge[K]) e
 		Where("target_hash = ?", targetHash).
 		RunWith(s.db).
 		Exec()
+	if err != nil {
+		return err
+	}
 	if rows, _ := modified.RowsAffected(); rows == 0 {
 		return graph.ErrEdgeNotFound
 	}
-	return err
+	return nil
 }
