@@ -18,9 +18,9 @@ func createStore[K comparable, T any](c Config) (*Store[K, T], error) {
 		panic(err)
 	}
 
-	store := New[K, T](db, c)
-	if store == nil {
-		return nil, fmt.Errorf("failed to create new store")
+	store, err := New[K, T](db, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new store: %w", err)
 	}
 
 	if err := store.SetupTables(); err != nil {
@@ -40,7 +40,6 @@ func TestImplementsStoreInterface(t *testing.T) {
 func TestUnique(t *testing.T) {
 	assert := assert.New(t)
 	conf := DefaultConfig
-	conf.Unique = true
 	store, err := createStore[int, int](conf)
 	assert.Nil(err)
 	assert.NotNil(store)

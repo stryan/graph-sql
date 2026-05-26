@@ -31,15 +31,6 @@ var DefaultConfig = Config{
 	EdgesTable:      "edges",
 	VertexHashType:  "TEXT",
 	VertexValueType: "JSON",
-	Unique:          false,
-}
-
-var SafeConfig = Config{
-	VerticesTable:   "vertices",
-	EdgesTable:      "edges",
-	VertexHashType:  "TEXT",
-	VertexValueType: "JSON",
-	Unique:          true,
 }
 
 // Config configures the table schema, i.e. the table names and some data types of its columns.
@@ -48,7 +39,6 @@ type Config struct {
 	EdgesTable      string
 	VertexHashType  string
 	VertexValueType string
-	Unique          bool
 }
 
 func createVerticesTableSQL(c Config) string {
