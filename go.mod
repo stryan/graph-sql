@@ -5,7 +5,7 @@ go 1.23.4
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/dominikbraun/graph v0.23.0
-	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/stretchr/testify v1.10.0
 )
 

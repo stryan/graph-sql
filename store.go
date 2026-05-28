@@ -12,6 +12,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 )
 
+var ErrNoTables = errors.New("no such table")
+
 // Store is a graph.Store implementation that uses an SQL database to store and retrieve graphs.
 type Store[K comparable, T any] struct {
 	db       *sql.DB
@@ -37,6 +39,9 @@ func (s *Store[K, T]) Close() error {
 		if err != nil {
 			finalErr = errors.Join(finalErr, err)
 		}
+	}
+	if err := s.db.Close(); err != nil {
+		finalErr = errors.Join(finalErr, err)
 	}
 	return finalErr
 }
@@ -76,29 +81,6 @@ func (s *Store[K, T]) SetupTables() error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	vs, err := s.db.Prepare(fmt.Sprintf("SELECT value,weight,attributes FROM %s WHERE hash = ?",
-		s.config.VerticesTable))
-	if err != nil {
-		return err
-	}
-	avs, err := s.db.Prepare(fmt.Sprintf("INSERT INTO %s (hash,value,weight,attributes) VALUES (?,?,?,?)",
-		s.config.VerticesTable))
-	if err != nil {
-		return err
-	}
-	ed, err := s.db.Prepare(fmt.Sprintf("SELECT weight,attributes,data FROM %s WHERE source_hash = ? AND target_hash = ?", s.config.EdgesTable))
-	if err != nil {
-		return err
-	}
-	aed, err := s.db.Prepare(fmt.Sprintf("INSERT INTO %s (source_hash,target_hash,weight,attributes,data) VALUES (?,?,?,?,?)", s.config.EdgesTable))
-	if err != nil {
-		return err
-	}
-	s.registry["Vertex"] = vs
-	s.registry["AddVertex"] = avs
-	s.registry["Edge"] = ed
-	s.registry["AddEdge"] = aed
-
 	return nil
 }
 
@@ -123,6 +105,53 @@ func (s *Store[K, T]) DestroyTables() error {
 	return tx.Commit()
 }
 
+func (s *Store[K, T]) Validate() error {
+	var dummy int
+	query := "SELECT 1 FROM %s LIMIT 1"
+
+	err := s.db.QueryRow(fmt.Sprintf(query, s.config.VerticesTable)).Scan(&dummy)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("%w: %s", ErrNoTables, s.config.VerticesTable)
+	}
+	err = s.db.QueryRow(fmt.Sprintf(query, s.config.EdgesTable)).Scan(&dummy)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("%w: %s", ErrNoTables, s.config.VerticesTable)
+	}
+	return nil
+}
+
+func (s *Store[K, T]) PrepareStatements() error {
+	vs, err := s.db.Prepare(fmt.Sprintf("SELECT value,weight,attributes FROM %s WHERE hash = ?",
+		s.config.VerticesTable))
+	if err != nil {
+		return err
+	}
+	avs, err := s.db.Prepare(fmt.Sprintf("INSERT INTO %s (hash,value,weight,attributes) VALUES (?,?,?,?)",
+		s.config.VerticesTable))
+	if err != nil {
+		return err
+	}
+	ed, err := s.db.Prepare(fmt.Sprintf("SELECT weight,attributes,data FROM %s WHERE source_hash = ? AND target_hash = ?", s.config.EdgesTable))
+	if err != nil {
+		return err
+	}
+	aed, err := s.db.Prepare(fmt.Sprintf("INSERT INTO %s (source_hash,target_hash,weight,attributes,data) VALUES (?,?,?,?,?)", s.config.EdgesTable))
+	if err != nil {
+		return err
+	}
+	s.registry["Vertex"] = vs
+	s.registry["AddVertex"] = avs
+	s.registry["Edge"] = ed
+	s.registry["AddEdge"] = aed
+	return nil
+}
+
 // AddVertex implements graph.Store.AddVertex.
 func (s *Store[K, T]) AddVertex(hash K, value T, properties graph.VertexProperties) error {
 	valueBytes, err := json.Marshal(value)
@@ -135,10 +164,16 @@ func (s *Store[K, T]) AddVertex(hash K, value T, properties graph.VertexProperti
 		return err
 	}
 	stmt, ok := s.registry["AddVertex"]
-	if !ok {
-		return errors.New("no AddVertex statement")
+	if ok {
+		_, err = stmt.Exec(hash, valueBytes, properties.Weight, attributeBytes)
+	} else {
+		_, err = sq.
+			Insert(s.config.VerticesTable).
+			Columns("hash", "value", "weight", "attributes").
+			Values(hash, valueBytes, properties.Weight, attributeBytes).
+			RunWith(s.db).
+			Exec()
 	}
-	_, err = stmt.Exec(hash, valueBytes, properties.Weight, attributeBytes)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return graph.ErrVertexAlreadyExists
 	} else if err != nil {
@@ -155,12 +190,20 @@ func (s *Store[K, T]) Vertex(hash K) (T, graph.VertexProperties, error) {
 		attributesBytes []byte
 		value           T
 		properties      graph.VertexProperties
+		err             error
 	)
 	stmt, ok := s.registry["Vertex"]
-	if !ok {
-		return value, properties, errors.New("no prepared vertex statement")
+	if ok {
+		err = stmt.QueryRow(hash).Scan(&valueBytes, &properties.Weight, &attributesBytes)
+	} else {
+		err = sq.
+			Select("value", "weight", "attributes").
+			From(s.config.VerticesTable).
+			Where(sq.Eq{"hash": hash}).
+			RunWith(s.db).
+			QueryRow().
+			Scan(&valueBytes, &properties.Weight, &attributesBytes)
 	}
-	err := stmt.QueryRow(hash).Scan(&valueBytes, &properties.Weight, &attributesBytes)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return value, properties, graph.ErrVertexNotFound
@@ -246,10 +289,28 @@ func (s *Store[K, T]) AddEdge(sourceHash, targetHash K, edge graph.Edge[K]) erro
 		return graph.ErrVertexNotFound
 	}
 	stmt, ok := s.registry["AddEdge"]
-	if !ok {
-		return errors.New("no prepared add edge statement")
+	if ok {
+		_, err = stmt.Exec(sourceHash, targetHash, edge.Properties.Weight, attributesBytes, edge.Properties.Data)
+	} else {
+		_, err = sq.
+			Insert(s.config.EdgesTable).
+			Columns(
+				"source_hash",
+				"target_hash",
+				"weight",
+				"attributes",
+				"data",
+			).
+			Values(
+				sourceHash,
+				targetHash,
+				edge.Properties.Weight,
+				attributesBytes,
+				edge.Properties.Data,
+			).
+			RunWith(s.db).
+			Exec()
 	}
-	_, err = stmt.Exec(sourceHash, targetHash, edge.Properties.Weight, attributesBytes, edge.Properties.Data)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return graph.ErrEdgeAlreadyExists
 	}
@@ -302,14 +363,24 @@ func (s *Store[K, T]) Edge(sourceHash, targetHash K) (graph.Edge[K], error) {
 		Source: sourceHash,
 		Target: targetHash,
 	}
-	stmt, ok := s.registry["Edge"]
-	if !ok {
-		return edge, errors.New("no prepared edge statement")
-	}
 	var attributesBytes []byte
-	err := stmt.QueryRow(sourceHash, targetHash).
-		Scan(&edge.Properties.Weight, &attributesBytes, &edge.Properties.Data)
-
+	var err error
+	stmt, ok := s.registry["Edge"]
+	if ok {
+		err = stmt.QueryRow(sourceHash, targetHash).
+			Scan(&edge.Properties.Weight, &attributesBytes, &edge.Properties.Data)
+	} else {
+		err = sq.
+			Select("weight", "attributes", "data").
+			From(s.config.EdgesTable).
+			Where(sq.Eq{
+				"source_hash": sourceHash,
+				"target_hash": targetHash,
+			}).
+			RunWith(s.db).
+			QueryRow().
+			Scan(&edge.Properties.Weight, &attributesBytes, &edge.Properties.Data)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return edge, graph.ErrEdgeNotFound
 	}
