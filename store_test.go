@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/dominikbraun/graph"
+	"github.com/stryan/graph"
 
 	_ "github.com/mattn/go-sqlite3"
 )

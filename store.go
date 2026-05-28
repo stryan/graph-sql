@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dominikbraun/graph"
+	"github.com/stryan/graph"
 
 	sq "github.com/Masterminds/squirrel"
 )
